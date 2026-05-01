@@ -1473,13 +1473,12 @@ document.addEventListener('click', e => {
 });
 
 // INIT
-init();
 </script>
 
 <!-- Firebase -->
-<script src="./PulsCare_Ai-_files/firebase-app-compat.js.download"></script>
-<script src="./PulsCare_Ai-_files/firebase-database-compat.js.download"></script>
-<script src="./PulsCare_Ai-_files/firebase-auth-compat.js.download"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
 
 <script>
 const firebaseConfig = {
@@ -1495,6 +1494,10 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.database();
+</script>
+
+<script>
+window.addEventListener('load', function() { init(); });
 </script>
 <script>
   // كل الدوال هنا
@@ -1657,4 +1660,11 @@ async function submitResetPassword() {
     });
   });
 }
-</script></body></html>
+</script>
+
+<script>
+window.addEventListener('load', function() {
+  if(typeof init === 'function') init();
+});
+</script>
+</body></html>
