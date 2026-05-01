@@ -1495,10 +1495,6 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.database();
 </script>
-
-<script>
-window.addEventListener('load', function() { init(); });
-</script>
 <script>
   // كل الدوال هنا
   // loadUsers
@@ -1664,7 +1660,15 @@ async function submitResetPassword() {
 
 <script>
 window.addEventListener('load', function() {
-  if(typeof init === 'function') init();
+  if(typeof db !== 'undefined' && typeof init === 'function') {
+    init();
+  } else {
+    // انتظار تحميل Firebase
+    setTimeout(function() {
+      if(typeof init === 'function') init();
+    }, 1000);
+  }
 });
 </script>
-</body></html>
+</body>
+</html>
