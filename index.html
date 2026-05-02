@@ -471,7 +471,16 @@ body{
 // مفاتيح التخزين — ثابتة نهائياً
 // ===================================================
 const USERS_KEY = 'pc_users';
-const SESS_KEY  = 'pc_sess';
+// مفتاح جلسة فريد لكل جهاز — مخزن في localStorage
+function getSessKey() {
+  let k = localStorage.getItem('pc_device_id');
+  if (!k) {
+    k = 'pc_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem('pc_device_id', k);
+  }
+  return k;
+}
+const SESS_KEY = getSessKey();
 
 // بنية المستخدم الافتراضي — حقول ثابتة
 // username, password, name, role, status, lastLogin, created
@@ -593,7 +602,14 @@ async function saveUsers(arr) {
 async function loadSession() {
   try {
     const snap = await db.ref('sessions/' + SESS_KEY).once('value');
-    return snap.exists() ? snap.val() : null;
+    if (!snap.exists()) return null;
+    const sess = snap.val();
+    // انتهاء الجلسة بعد 8 ساعات
+    if (!sess.ts || Date.now() - sess.ts > 8 * 60 * 60 * 1000) {
+      await deleteSession();
+      return null;
+    }
+    return sess;
   } catch(e) { return null; }
 }
 
