@@ -549,7 +549,22 @@ async function loadUsers() {
       const val = snapshot.val();
       const arr = Array.isArray(val) ? val : Object.values(val);
       const normalized = normalizeUsers(arr);
-      if (normalized.length > 0) return normalized;
+      if (normalized.length > 0) {
+        // migration: إذا كانت كلمة المرور plain text (أقل من 60 حرف) شفّرها
+        let needsSave = false;
+        for (const u of normalized) {
+          if (u.password && u.password.length < 60 && u.password !== '***') {
+            u.password = await hashPassword(u.password);
+            needsSave = true;
+          }
+        }
+        if (needsSave) {
+          const obj = {};
+          normalized.forEach(u => { if(u.username) obj[u.username] = u; });
+          await db.ref('users').set(obj);
+        }
+        return normalized;
+      }
     }
   } catch(e) { console.error('loadUsers error:', e); }
   // إذا فشل Firebase أو فارغ — أعد المدير الافتراضي وارفعه
