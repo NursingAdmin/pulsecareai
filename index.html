@@ -1,7 +1,17 @@
 
-<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><style>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font-sans)}
+body{
+  font-family:var(--font-sans);
+  overflow-x: hidden;
+}
 :root{--b:#1A3FA0;--m:#2D5BE3;--p:#7B3FD8;--bs:#EEF2FF;--ps:#F3EEFF;--bb:#B8CAFF;--pb:#D4BAFF}
 
 .login-bg{min-height:480px;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:#FFFFFF;direction:rtl}
@@ -668,7 +678,7 @@ function ST(i) {
     if(s) s.classList.toggle('on', i===j);
   });
   if(i===3) { LT(); LS(); }
-  const colors = ['#EEF2FF','#EBF0FF','#E8E4FF','#F3EEFF'];
+  const colors = ['#EEF2FF','#EEF2FF','#EEF2FF','#F3EEFF'];
   [0,1,2,3].forEach(j => {
     const s = document.getElementById('s'+j);
     if(s) s.style.background = colors[j];
