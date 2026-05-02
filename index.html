@@ -2,7 +2,8 @@
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
@@ -272,7 +273,7 @@ body{
       </div>
       <div class="l-title">تسجيل الدخول</div>
       <div class="lerr" id="lerr"></div>
-      <div class="lf"><label>اسم المستخدم</label><input class="linp" type="text" id="lusr" placeholder="أدخل اسم المستخدم" onkeydown="if(event.key===&#39;Enter&#39;)document.getElementById(&#39;lpw&#39;).focus()"></div>
+      <div class="lf"><label>البريد الإلكتروني</label><input class="linp" type="text" id="lusr" placeholder="أدخل اسم المستخدم" onkeydown="if(event.key===&#39;Enter&#39;)document.getElementById(&#39;lpw&#39;).focus()"></div>
       <div class="lf"><label>كلمة المرور</label>
         <div class="pw-w"><input class="linp" type="password" id="lpw" placeholder="أدخل كلمة المرور" onkeydown="if(event.key===&#39;Enter&#39;)doLogin()">
         <button class="pw-eye" id="eyeB" onclick="toggleEye()">👁</button></div>
@@ -428,6 +429,7 @@ body{
         <button class="atb on" id="at0" onclick="SAT(0)">👥 المستخدمون</button>
         <button class="atb" id="at1" onclick="SAT(1)">➕ إضافة</button>
         <button class="atb" id="at2" onclick="SAT(2)">📊 إحصائيات</button>
+        <button class="atb" id="at3" onclick="SAT(3)" style="position:relative">📬 الطلبات<span id="reqBadge" style="display:none;position:absolute;top:2px;right:2px;background:#E53935;color:#fff;border-radius:50%;width:18px;height:18px;font-size:12px;line-height:18px;text-align:center"></span></button>
       </div>
       <div id="as0" class="asec on">
         <div class="pn">أنت <strong>مدير النظام</strong> — تحكم كامل في قائمة المستخدمين</div>
@@ -450,6 +452,11 @@ body{
         <div class="fa"><button class="sbtn" onclick="addUser()">💾 حفظ المستخدم</button><button class="cbtn2" onclick="clearAdd()">مسح</button></div>
       </div>
       <div id="as2" class="asec"><div class="sg" id="stGrid"></div></div>
+      <div id="as3" class="asec">
+        <div class="pn" style="margin-bottom:.8rem">طلبات الحسابات الجديدة من المستخدمين — قبل أو ارفض وأضف الحساب يدوياً</div>
+        <div id="reqMsg"></div>
+        <div id="reqList" style="display:flex;flex-direction:column;gap:10px"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -479,6 +486,15 @@ const DEF_ADMIN = {
   department: 'Nursing Administration',
   createdBy: 'system'
 };
+
+// ===================================================
+// تشفير كلمة المرور SHA-256
+// ===================================================
+async function hashPassword(pw) {
+  const enc = new TextEncoder().encode(pw);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
 
 let CU = null;
 let lang = 'ar';
@@ -538,9 +554,11 @@ async function loadUsers() {
   } catch(e) { console.error('loadUsers error:', e); }
   // إذا فشل Firebase أو فارغ — أعد المدير الافتراضي وارفعه
   try {
+    const hashed = { ...DEF_ADMIN, password: await hashPassword(DEF_ADMIN.password) };
     const obj = {};
-    obj[DEF_ADMIN.username] = DEF_ADMIN;
+    obj[hashed.username] = hashed;
     await db.ref('users').set(obj);
+    return [hashed];
   } catch(e) {}
   return [DEF_ADMIN];
 }
@@ -580,14 +598,15 @@ async function deleteSession() {
 async function init() {
   let users = await loadUsers();
   if (!users.find(u => u.username === 'admin')) {
-    users.unshift(DEF_ADMIN);
+    const hashed = { ...DEF_ADMIN, password: await hashPassword(DEF_ADMIN.password) };
+    users.unshift(hashed);
     await saveUsers(users);
   }
   const sess = await loadSession();
   if (sess && sess.username) {
     const fresh = await loadUsers();
     const found = fresh.find(u => u.username === sess.username && u.status === 'active');
-    if (found) { CU = found; showApp(); return; }
+    if (found) { CU = { ...found, password: '***' }; showApp(); return; }
   }
   showLogin();
 }
@@ -617,15 +636,27 @@ async function doLogin() {
   }
 
   const users = await loadUsers();
-  const found = users.find(u => u.username === usr && u.password === pw);
+  const hashedInput = await hashPassword(pw);
+  const found = users.find(u => u.username === usr && u.password === hashedInput);
 
   if (!found) {
+    // rate limiting بسيط
+    const key = 'fa_' + usr;
+    const fails = parseInt(sessionStorage.getItem(key)||'0') + 1;
+    sessionStorage.setItem(key, fails);
+    if (fails >= 5) {
+      errEl.textContent = '🔒 محاولات كثيرة — انتظر دقيقة';
+      errEl.classList.add('show');
+      setTimeout(() => sessionStorage.removeItem(key), 60000);
+      return;
+    }
     errEl.textContent = '❌ اسم المستخدم أو كلمة المرور غير صحيحة';
     errEl.classList.add('show');
     document.getElementById('lpw').value = '';
     ['lusr','lpw'].forEach(id => document.getElementById(id).classList.add('err'));
     return;
   }
+  sessionStorage.removeItem('fa_' + usr);
 
   if (found.status === 'inactive') {
     errEl.textContent = '⛔ هذا الحساب معطل — تواصل مع مدير النظام';
@@ -635,7 +666,7 @@ async function doLogin() {
   found.lastLogin = new Date().toLocaleString('ar-SA');
   await saveUsers(users);
   await saveSession(found.username);
-  CU = found;
+  CU = { ...found, password: '***' };  // لا نحتفظ بكلمة المرور في الذاكرة
   showApp();
 }
 
@@ -663,7 +694,16 @@ function showApp() {
   document.getElementById('uNm').textContent = CU.name;
   document.getElementById('uBdg').innerHTML = `<span class="rbdg ${rc[CU.role]||'rn'}" style="margin-right:3px">${rl[CU.role]||CU.role}</span>`;
   document.getElementById('uAv').textContent = CU.role === 'admin' ? '🔑' : CU.role === 'view' ? '👓' : '👤';
-  document.getElementById('t3').style.display = CU.role === 'admin' ? 'flex' : 'none';
+  // إخفاء زر وقسم الإدارة كاملاً لغير الأدمن
+  const t3 = document.getElementById('t3');
+  const s3 = document.getElementById('s3');
+  if (CU.role === 'admin') {
+    if(t3) t3.style.display = 'flex';
+    if(s3) s3.setAttribute('data-admin','1');
+  } else {
+    if(t3) t3.style.display = 'none';
+    if(s3) { s3.innerHTML = ''; s3.removeAttribute('data-admin'); }
+  }
   ST(0);
   buildDD(''); buildNDD(''); CV(); UP(0);
 }
@@ -672,12 +712,14 @@ function showApp() {
 // تبديل التبويبات
 // ===================================================
 function ST(i) {
+  // منع الوصول لقسم الإدارة لغير الأدمن
+  if (i === 3 && (!CU || CU.role !== 'admin')) return;
   [0,1,2,3].forEach(j => {
     const t = document.getElementById('t'+j), s = document.getElementById('s'+j);
     if(t) t.classList.toggle('on', i===j);
     if(s) s.classList.toggle('on', i===j);
   });
-  if(i===3) { LT(); LS(); }
+  if(i===3) { LT(); LS(); checkRequestsBadge(); }
   const colors = ['#EEF2FF','#EEF2FF','#EEF2FF','#F3EEFF'];
   [0,1,2,3].forEach(j => {
     const s = document.getElementById('s'+j);
@@ -1307,7 +1349,7 @@ function AV(){const sys=parseInt(document.getElementById('vSys').value)||120;con
 function RV(){['vSys','vDia','vHR','vRR','vSp','vTp'].forEach((id,i)=>{document.getElementById(id).value=[120,80,72,16,98,37][i];});document.getElementById('vGC').selectedIndex=0;document.getElementById('vPain').value=0;UP(0);CV();document.getElementById('aRes').classList.remove('on');}
 
 // ===== ADMIN =====
-function SAT(i){[0,1,2].forEach(j=>{document.getElementById('at'+j).classList.toggle('on',i===j);document.getElementById('as'+j).classList.toggle('on',i===j);});if(i===0)LT();if(i===2)LS();}
+function SAT(i){[0,1,2,3].forEach(j=>{const a=document.getElementById('at'+j),s=document.getElementById('as'+j);if(a)a.classList.toggle('on',i===j);if(s)s.classList.toggle('on',i===j);});if(i===0)LT();if(i===2)LS();if(i===3)loadRequests();}
 
 async function LT() {
   const users = await loadUsers();
@@ -1365,7 +1407,7 @@ async function addUser() {
 
   const newUser = {
     username: un,
-    password: pw,
+    password: await hashPassword(pw),
     name: nm,
     role: role,
     status: status,
@@ -1382,6 +1424,11 @@ async function addUser() {
     showOk(`✅ تم إضافة المستخدم "${nm}" بنجاح`);
     clearAdd();
     LT(); LS();
+    // تعليم الطلب كـ approved إن وُجد
+    if (window._pendingApproveKey) {
+      try { await db.ref('requests/' + window._pendingApproveKey + '/status').set('approved'); } catch(e){}
+      window._pendingApproveKey = null;
+    }
     SAT(0);
   } else {
     showErr('❌ خطأ في حفظ البيانات — حاول مرة أخرى');
@@ -1453,7 +1500,7 @@ async function SPW(un) {
   const users = await loadUsers();
   const u = users.find(x => x.username === un);
   if (!u) return;
-  u.password = p1;
+  u.password = await hashPassword(p1);
   await saveUsers(users);
   CM(); LM(`✅ تم تغيير كلمة مرور "${u.name}"`);
 }
@@ -1484,6 +1531,116 @@ async function LS() {
     <div class="sc"><div class="sn" style="color:var(--b)">${users.filter(u=>u.role==='nurse').length}</div><div class="sl">الممرضون</div></div>
     <div class="sc"><div class="sn" style="color:#1D6B22">${users.filter(u=>u.role==='view').length}</div><div class="sl">للاطلاع فقط</div></div>
     <div class="sc"><div class="sn" style="color:#A32D2D">${users.filter(u=>u.status==='inactive').length}</div><div class="sl">حسابات معطلة</div></div>`;
+}
+
+async function checkRequestsBadge() {
+  try {
+    const snap = await db.ref('requests').orderByChild('status').equalTo('pending').once('value');
+    const badge = document.getElementById('reqBadge');
+    if (!badge) return;
+    const count = snap.numChildren();
+    if (count > 0) { badge.textContent = count; badge.style.display = 'block'; }
+    else badge.style.display = 'none';
+  } catch(e) {}
+}
+
+async function loadRequests() {
+  const listEl = document.getElementById('reqList');
+  const msgEl  = document.getElementById('reqMsg');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="color:var(--color-text-secondary);font-size:18px;padding:1rem;text-align:center">⏳ جاري التحميل...</div>';
+  try {
+    const snap = await db.ref('requests').once('value');
+    const data = snap.val();
+    // تحديث الـ badge
+    const badge = document.getElementById('reqBadge');
+    if (!data) {
+      listEl.innerHTML = '<div style="color:var(--color-text-secondary);font-size:18px;padding:2rem;text-align:center;background:var(--color-background-secondary);border-radius:10px">📭 لا توجد طلبات حالياً</div>';
+      if (badge) badge.style.display = 'none';
+      return;
+    }
+    const requests = Object.entries(data);
+    const pending  = requests.filter(([,r]) => r.status === 'pending');
+    if (badge) {
+      if (pending.length > 0) { badge.textContent = pending.length; badge.style.display = 'block'; }
+      else badge.style.display = 'none';
+    }
+    if (requests.length === 0) {
+      listEl.innerHTML = '<div style="color:var(--color-text-secondary);font-size:18px;padding:2rem;text-align:center;background:var(--color-background-secondary);border-radius:10px">📭 لا توجد طلبات حالياً</div>';
+      return;
+    }
+    listEl.innerHTML = requests.reverse().map(([key, r]) => {
+      const isPending  = r.status === 'pending';
+      const isApproved = r.status === 'approved';
+      const statusBadge = isPending
+        ? '<span style="background:#FFF3E0;color:#E65100;border:1px solid #FFCC80;border-radius:20px;padding:2px 10px;font-size:16px">⏳ معلّق</span>'
+        : isApproved
+          ? '<span style="background:#E8F5E9;color:#1D6B22;border:1px solid #97C459;border-radius:20px;padding:2px 10px;font-size:16px">✅ تمت الموافقة</span>'
+          : '<span style="background:#FCEBEB;color:#A32D2D;border:1px solid #F09595;border-radius:20px;padding:2px 10px;font-size:16px">❌ مرفوض</span>';
+      return `<div style="background:var(--color-background-secondary);border:1px solid var(--color-border-tertiary);border-radius:12px;padding:1rem 1.2rem;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <div style="flex:1;min-width:180px">
+          <div style="font-size:18px;font-weight:600;color:var(--color-text-primary);margin-bottom:4px">👤 ${r.name||'—'}</div>
+          <div style="font-size:16px;color:var(--color-text-secondary)">🏥 ${r.dept||'—'}</div>
+          <div style="font-size:16px;color:var(--color-text-secondary)">🔖 اسم المستخدم المطلوب: <strong>${r.username||key}</strong></div>
+          <div style="font-size:15px;color:var(--color-text-tertiary);margin-top:3px">🕐 ${r.createdAt||'—'}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
+          ${statusBadge}
+          ${isPending ? `
+          <div style="display:flex;gap:6px">
+            <button onclick="approveRequest('${key}')" style="padding:7px 14px;background:#1D6B22;color:#fff;border:none;border-radius:8px;font-size:17px;cursor:pointer;font-family:var(--font-sans)">✅ موافقة وإضافة</button>
+            <button onclick="rejectRequest('${key}')" style="padding:7px 14px;background:#A32D2D;color:#fff;border:none;border-radius:8px;font-size:17px;cursor:pointer;font-family:var(--font-sans)">❌ رفض</button>
+          </div>` : `<button onclick="deleteRequest('${key}')" style="padding:5px 12px;background:var(--color-background-tertiary);color:var(--color-text-secondary);border:1px solid var(--color-border-tertiary);border-radius:8px;font-size:16px;cursor:pointer">🗑️ حذف</button>`}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    listEl.innerHTML = '<div style="color:#A32D2D;font-size:18px;padding:1rem">❌ خطأ في تحميل الطلبات: ' + e.message + '</div>';
+  }
+}
+
+async function approveRequest(key) {
+  // فتح نموذج إضافة الحساب مع تعبئة البيانات تلقائياً
+  try {
+    const snap = await db.ref('requests/' + key).once('value');
+    const r = snap.val();
+    if (!r) return;
+    // الانتقال لتبويب الإضافة وتعبئة البيانات
+    SAT(1);
+    setTimeout(() => {
+      const nUsr  = document.getElementById('nUsr');
+      const nName = document.getElementById('nName');
+      const nDept = document.getElementById('nDept');
+      if (nUsr)  nUsr.value  = r.username || '';
+      if (nName) nName.value = r.name     || '';
+      if (nDept) {
+        // محاولة مطابقة القسم
+        const opts = Array.from(nDept.options).map(o=>o.value);
+        const match = opts.find(o => o.toLowerCase().includes((r.dept||'').toLowerCase().slice(0,4)));
+        if (match) nDept.value = match;
+      }
+      // تعليم الطلب كتمت الموافقة بعد الحفظ
+      window._pendingApproveKey = key;
+      const aMsg = document.getElementById('aMsg');
+      if (aMsg) { aMsg.className='mok on'; aMsg.textContent='💡 بيانات الطلب مُعبّأة — أكمل كلمة المرور واضغط حفظ'; }
+    }, 200);
+  } catch(e) { alert('خطأ: ' + e.message); }
+}
+
+async function rejectRequest(key) {
+  if (!confirm('هل تريد رفض هذا الطلب؟')) return;
+  try {
+    await db.ref('requests/' + key + '/status').set('rejected');
+    loadRequests();
+  } catch(e) { alert('خطأ: ' + e.message); }
+}
+
+async function deleteRequest(key) {
+  if (!confirm('هل تريد حذف هذا الطلب نهائياً؟')) return;
+  try {
+    await db.ref('requests/' + key).remove();
+    loadRequests();
+  } catch(e) { alert('خطأ: ' + e.message); }
 }
 
 function LM(txt) {
@@ -1663,10 +1820,11 @@ async function submitResetPassword() {
 
   try {
     const users = await loadUsers();
-    const found = users.find(u => u.username === usr && u.password === old);
+    const hashedOld = await hashPassword(old);
+    const found = users.find(u => u.username === usr && u.password === hashedOld);
     if (!found) { showMsg('❌ اسم المستخدم أو كلمة المرور الحالية غير صحيحة', false); return; }
 
-    found.password = pw1;
+    found.password = await hashPassword(pw1);
     await saveUsers(users);
     showMsg('✅ تم تغيير كلمة المرور بنجاح', true);
     setTimeout(() => document.getElementById('resetModal')?.remove(), 2000);
