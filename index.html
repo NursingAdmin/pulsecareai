@@ -1358,7 +1358,91 @@ function FDD(q){buildDD(q)}
 function PS(s){const i=selSyms.indexOf(s);if(i>-1)selSyms.splice(i,1);else selSyms.push(s);buildDD(document.getElementById('ddSI').value);renderTags();const n=selSyms.length;document.getElementById('triBtn').disabled=n===0;document.getElementById('T_selCount').textContent=n>0?(lang==='ar'?`تم اختيار ${n} أعراض`:`${n} symptom(s) selected`):(LANG_TXT[lang]?.T_selCount||'لم يتم اختيار أي أعراض');}
 function renderTags(){const eyeSet=lang==='ar'?EYE_AR:lang==='en'?EYE_EN:EYE_FR;if(!selSyms.length){document.getElementById('sTags').innerHTML=`<span class="nosel">${LANG_TXT[lang]?.T_noSel||'لم يتم اختيار أي أعراض بعد'}</span>`;return;}document.getElementById('sTags').innerHTML=selSyms.map(s=>{const isE=eyeSet.has(s);return`<span class="stg${isE?' eye':''}">${isE?'👁 ':''}${s}<span class="sx" onclick="RS('${s.replace(/'/g,"\\'")}')">×</span></span>`;}).join('');}
 function RS(s){selSyms=selSyms.filter(x=>x!==s);buildDD(document.getElementById('ddSI').value);renderTags();document.getElementById('triBtn').disabled=selSyms.length===0;}
-function doTriage(){document.getElementById('triLd').classList.add('on');document.getElementById('ctasR').classList.remove('on');setTimeout(()=>{document.getElementById('triLd').classList.remove('on');const hr=parseInt(document.getElementById('tHR').value)||80;const sp=parseInt(document.getElementById('tO2').value)||98;const gc=parseInt(document.getElementById('tGCS').value)||15;const rr=parseInt(document.getElementById('tRR').value)||16;const pn=parseInt(document.getElementById('tPain').value)||0;let lv=5;if(gc<=8||sp<=85||hr>=150||hr<=40||rr>=30||rr<=8||pn>=10)lv=1;else if(gc<=12||sp<=90||hr>=130||hr<=50||rr>=28||rr<=10||pn>=8)lv=Math.min(lv,2);else if(gc<=14||sp<=93||hr>=120||hr<=55||rr>=25||rr<=12||pn>=6)lv=Math.min(lv,3);else if(sp<=95||hr>=110||hr<=60||rr>=22||pn>=3)lv=Math.min(lv,4);const st=selSyms.join(' ').toLowerCase();for(const r of CKWS){if(r.kw.some(k=>st.includes(k.toLowerCase()))){lv=Math.min(lv,r.l);break;}}showTR(lv);},900);}
+function doTriage(){
+  document.getElementById('triLd').classList.add('on');
+  document.getElementById('ctasR').classList.remove('on');
+  setTimeout(()=>{
+    document.getElementById('triLd').classList.remove('on');
+
+    const hr = parseInt(document.getElementById('tHR').value)  || 80;
+    const sp = parseInt(document.getElementById('tO2').value)  || 98;
+    const gc = parseInt(document.getElementById('tGCS').value) || 15;
+    const rr = parseInt(document.getElementById('tRR').value)  || 16;
+    const pn = parseInt(document.getElementById('tPain').value)|| 0;
+    const tp = parseFloat(document.getElementById('tTemp').value)||37.0;
+
+    // ===== خوارزمية CTAS المُصلحة =====
+    // كل علامة تُعطي نقاط خطورة مستقلة
+    // النتيجة النهائية = أعلى مستوى خطورة من مجموع العلامات
+
+    // --- نقاط كل علامة ---
+    let hrScore = 5; // افتراضي طبيعي = 5
+    if      (hr >= 150 || hr <= 40)              hrScore = 1; // حرج جداً
+    else if (hr >= 130 || hr <= 50)              hrScore = 2; // طارئ
+    else if (hr >= 110 || hr <= 55)              hrScore = 3; // عاجل
+    else if (hr >= 100 || hr <= 60)              hrScore = 4; // أقل إلحاحاً
+    else                                          hrScore = 5; // طبيعي
+
+    let rrScore = 5;
+    if      (rr >= 35 || rr <= 8)               rrScore = 1; // حرج جداً
+    else if (rr >= 28 || rr <= 10)              rrScore = 2; // طارئ
+    else if (rr >= 24 || rr <= 12)              rrScore = 3; // عاجل
+    else if (rr >= 20)                           rrScore = 4; // أقل إلحاحاً
+    else                                          rrScore = 5; // طبيعي
+
+    let spScore = 5;
+    if      (sp <= 90)                           spScore = 1; // حرج جداً — SpO2<90% دائماً CTAS 1
+    else if (sp <= 92)                           spScore = 2; // طارئ
+    else if (sp <= 93)                           spScore = 3; // عاجل
+    else if (sp <= 95)                           spScore = 4; // أقل إلحاحاً
+    else                                          spScore = 5; // طبيعي
+
+    let gcScore = 5;
+    if      (gc <= 8)                            gcScore = 1; // فقدان وعي
+    else if (gc <= 12)                           gcScore = 2; // تشوش شديد
+    else if (gc <= 14)                           gcScore = 3; // تشوش خفيف
+    else                                          gcScore = 5; // واعٍ طبيعي
+
+    let pnScore = 5;
+    if      (pn >= 10)                           pnScore = 1;
+    else if (pn >= 8)                            pnScore = 2;
+    else if (pn >= 6)                            pnScore = 3;
+    else if (pn >= 3)                            pnScore = 4;
+    else                                          pnScore = 5;
+
+    let tpScore = 5;
+    if      (tp >= 41 || tp < 34)               tpScore = 1;
+    else if (tp >= 40 || tp < 35)               tpScore = 2;
+    else if (tp >= 38.5 || tp < 36)             tpScore = 3;
+    else if (tp >= 38)                           tpScore = 4;
+    else                                          tpScore = 5;
+
+    // === التقييم الإجمالي ===
+    // قاعدة CTAS: أسوأ علامة ترفع المستوى، لكن علامة واحدة وحيدة غير كافية لـ CTAS 1
+    // CTAS 1 يحتاج: علامة واحدة حرجة جداً (score=1) أو علامتان score=2
+    const scores = [hrScore, rrScore, spScore, gcScore, pnScore, tpScore];
+    const count1 = scores.filter(s => s === 1).length; // عدد العلامات الحرجة جداً
+    const count2 = scores.filter(s => s <= 2).length; // عدد العلامات الطارئة فأشد
+    const minScore = Math.min(...scores);              // أسوأ علامة
+
+    let lv;
+    if      (count1 >= 1 || count2 >= 3)  lv = 1; // علامة حرجة واحدة أو 3 طارئة
+    else if (count2 >= 1)                  lv = 2; // علامة طارئة واحدة على الأقل
+    else if (minScore <= 3)                lv = 3; // علامة عاجلة
+    else if (minScore <= 4)                lv = 4; // أقل إلحاحاً
+    else                                   lv = 5; // غير عاجلة
+
+    // === تعديل بناءً على الأعراض ===
+    const st = selSyms.join(' ').toLowerCase();
+    for(const r of CKWS){
+      if(r.kw.some(k=>st.includes(k.toLowerCase()))){
+        lv = Math.min(lv, r.l); break;
+      }
+    }
+
+    showTR(lv);
+  }, 900);
+}
 function showTR(lv){const d=CTAS[lang][lv-1];const isRtl=lang==='ar';const li=t=>`<li style="padding-${isRtl?'right':'left'}:12px;padding-${isRtl?'left':'right'}:0;position:relative"><span style="position:absolute;${isRtl?'right':'left'}:0;top:5px;font-size:6px;color:var(--m)">◆</span>${t}</li>`;document.getElementById('ctasBanner').innerHTML=`<div class="cbanner ${d.cls}"><div class="cnum">${lv}</div><div><div style="font-size:21px;font-weight:500;margin-bottom:3px">CTAS ${lv} — ${d.n}</div><div style="font-size:18px;opacity:.85">⏱ ${d.t}</div><div style="font-size:17px;margin-top:3px;opacity:.8">${d.d}</div></div></div>`;document.getElementById('stRow').innerHTML=`<span style="font-weight:500;margin-${isRtl?'left':'right'}:5px">${lang==='ar'?'الأعراض:':'Symptoms:'}</span>`+selSyms.map(s=>`<span style="background:var(--color-background-primary);border:.5px solid var(--bb);border-radius:10px;padding:2px 6px;font-size:17px">${s}</span>`).join('');document.getElementById('rSymp').innerHTML=selSyms.map(s=>li(s)).join('');document.getElementById('rInd').innerHTML=d.ind.map(i=>li(i)).join('');document.getElementById('rAct').innerHTML=d.acts.map((a,i)=>`<div class="ait"><div class="an">${i+1}</div><div class="at">${a}</div></div>`).join('');document.getElementById('rNanda').innerHTML=d.nanda.map(n=>li(n)).join('');document.getElementById('ctasR').classList.add('on');document.getElementById('ctasR').scrollIntoView({behavior:'smooth',block:'start'});}
 function resetTriage(){selSyms=[];buildDD('');renderTags();document.getElementById('ctasR').classList.remove('on');document.getElementById('triBtn').disabled=true;document.getElementById('T_selCount').textContent=LANG_TXT[lang]?.T_selCount||'لم يتم اختيار أي أعراض';['tHR','tO2','tRR','tTemp'].forEach((id,i)=>{document.getElementById(id).value=[80,98,16,37][i]});document.getElementById('tGCS').selectedIndex=0;document.getElementById('tPain').selectedIndex=0;}
 
